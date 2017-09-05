@@ -110,9 +110,9 @@ def handle_message(*, prefix, message, nick, channel, irc):
 			response_prefix = b''
 
 		command = command.decode(encoding = 'utf-8', errors = 'replace')
-		response = handle_command(command).encode('utf-8')
+		response = '\u200b' + handle_command(command)
 
-		irc.msg(channel, response_prefix + response)
+		irc.msg(channel, response_prefix + response.encode('utf-8'))
 
 def handle_nonmessage(*, prefix, command, arguments, irc):
 	...
