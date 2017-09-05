@@ -11,6 +11,46 @@ import line_handling
 
 Server = namedtuple('Server', ['host', 'port', 'nick', 'realname', 'channels'])
 
+class LoggerThread(threading.Thread):
+	def __init__(self, logging_channel, dead_notify_channel):
+		self.logging_channel = logging_channel
+		self.dead_notify_channel = dead_notify_channel
+
+		threading.Thread.__init__(self)
+
+	def run(self):
+		while True:
+			message_type, *message_data = self.logging_channel.recv()
+
+			# Lines that were sent between server and client
+			if message_type == logmessage_types.sent:
+				assert len(message_data) == 1
+				print('>' + message_data[0])
+
+			elif message_type == logmessage_types.received:
+				assert len(message_data) == 1
+				print('<' + message_data[0])
+
+			# Messages that are from internal components
+			elif message_type == logmessage_types.internal:
+				if message_data[0] == internal_submessage_types.quit:
+					assert len(message_data) == 1
+					print('--- Quit')
+
+					# TODO: don't quit, restart
+					self.dead_notify_channel.send((controlmessage_types.quit,))
+					break
+
+				elif message_data[0] == internal_submessage_types.error:
+					assert len(message_data) == 2
+					print('--- Error', message_data[1])
+
+				else:
+					print('--- ???', message_data)
+
+			else:
+				print('???', message_type, message_data)
+
 # API(serverthread_object)
 # Create a new API object corresponding to given ServerThread object
 class API:
@@ -162,46 +202,36 @@ class ServerThread(threading.Thread):
 		# Tell controller we're quiting
 		self.logging_channel.send((logmessage_types.internal, internal_submessage_types.quit))
 
-# spawn_serverthread(server) → control_channel, logging_channel
-# Creates a ServerThread for given server and returns the channels for controlling and monitoring it
-def spawn_serverthread(server):
+# spawn_serverthread(server, logging_channel) → control_channel
+# Creates a ServerThread for given server and returns the channel for controlling it
+def spawn_serverthread(server, logging_channel):
 	thread_control_socket, spawner_control_socket = socket.socketpair()
 	control_channel = channel.Channel()
-	logging_channel = channel.Channel()
 	ServerThread(server, control_channel, logging_channel).start()
-	return (control_channel, logging_channel)
+	return control_channel
+
+# spawn_loggerthread() → logging_channel, dead_notify_channel
+# Spawn logger thread and returns the channel it logs and the channel it uses to notify about quiting
+def spawn_loggerthread():
+	logging_channel = channel.Channel()
+	dead_notify_channel = channel.Channel()
+	LoggerThread(logging_channel, dead_notify_channel).start()
+	return logging_channel, dead_notify_channel
 
 if __name__ == '__main__':
 	server = Server(host = 'irc.freenode.net', port = 6667, nick = 'HynneFlip', realname = 'HynneFlip IRC bot', channels = ['##ingsoc'])
-	control_channel, logging_channel = spawn_serverthread(server)
+
+	logging_channel, dead_notify_channel = spawn_loggerthread()
+	control_channel = spawn_serverthread(server, logging_channel)
 
 	while True:
-		cmd = input(': ')
-		if cmd == '':
-			while True:
-				data = logging_channel.recv(blocking = False)
-				if data == None:
-					break
-				message_type, *message_data = data
-				if message_type == logmessage_types.sent:
-					assert len(message_data) == 1
-					print('>' + message_data[0])
-				elif message_type == logmessage_types.received:
-					assert len(message_data) == 1
-					print('<' + message_data[0])
-				elif message_type == logmessage_types.internal:
-					if message_data[0] == internal_submessage_types.quit:
-						assert len(message_data) == 1
-						print('--- Quit')
-					elif message_data[0] == internal_submessage_types.error:
-						assert len(message_data) == 2
-						print('--- Error', message_data[1])
-					else:
-						print('--- ???', message_data)
-				else:
-					print('???', message_type, message_data)
+		message = dead_notify_channel.recv(blocking = False)
+		if message is not None:
+			if message[0] == controlmessage_types.quit:
+				break
 
-		elif cmd == 'q':
+		cmd = input('')
+		if cmd == 'q':
 			control_channel.send((controlmessage_types.quit,))
 			break
 
