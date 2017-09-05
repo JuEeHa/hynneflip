@@ -5,6 +5,7 @@ import threading
 from collections import namedtuple
 
 import channel
+from constants import logmessage_types, internal_submessage_types, controlmessage_types
 
 Server = namedtuple('Server', ['host', 'port'])
 
@@ -27,13 +28,11 @@ class ServerThread(threading.Thread):
 		with self.server_socket_write_lock:
 			self.server_socket.sendall(line + b'\r\n')
 
-		# FIXME: use a real data structure
-		self.logging_channel.send('>' + line.decode(encoding = 'utf-8', errors = 'replace'))
+		self.logging_channel.send((logmessage_types.sent, line.decode(encoding = 'utf-8', errors = 'replace')))
 
 	def handle_line(self, line):
 		# TODO: implement line handling
-		# FIXME: use a real data structure
-		self.logging_channel.send('<' + line.decode(encoding = 'utf-8', errors = 'replace'))
+		self.logging_channel.send((logmessage_types.received, line.decode(encoding = 'utf-8', errors = 'replace')))
 
 	def mainloop(self):
 		# Register both the server socket and the control channel to or polling object
@@ -65,19 +64,18 @@ class ServerThread(threading.Thread):
 
 				# Control
 				elif fd == self.control_channel.fileno():
-					command = self.control_channel.recv()
-
-					# FIXME: use a real data structure
-					if command == 'q':
+					command_type, *arguments = self.control_channel.recv()
+					if command_type == controlmessage_types.quit:
 						quitting = True
 
-					elif len(command) > 0 and command[0] == '/':
-						irc_command, space, arguments = command[1:].encode('utf-8').partition(b' ')
+					elif command_type == controlmessage_types.send_line:
+						assert len(arguments) == 1
+						irc_command, space, arguments = arguments[0].encode('utf-8').partition(b' ')
 						line = irc_command.upper() + space + arguments
 						self.send_line_raw(line)
 
 					else:
-						self.logging_channel.send('?')
+						self.logging_channel.send((logmessage_types.internal, internal_submessage_types.error))
 
 				else:
 					assert False #unreachable
@@ -89,7 +87,8 @@ class ServerThread(threading.Thread):
 			self.server_socket = socket.create_connection(address)
 		except ConnectionRefusedError:
 			# Tell controller we failed
-			self.logging_channel.send('f')
+			self.logging_channel.send((logmessage_types.internal, internal_submessage_types.error))
+			self.logging_channel.send((logmessage_types.internal, internal_submessage_types.quit))
 			return
 
 		# Run initialization
@@ -105,7 +104,7 @@ class ServerThread(threading.Thread):
 		self.server_socket.close()
 
 		# Tell controller we're quiting
-		self.logging_channel.send('q')
+		self.logging_channel.send((logmessage_types.internal, internal_submessage_types.quit))
 
 # spawn_serverthread(server) → control_channel, logging_channel
 # Creates a ServerThread for given server and returns the channels for controlling and monitoring it
@@ -126,11 +125,24 @@ if __name__ == '__main__':
 				data = logging_channel.recv(blocking = False)
 				if data == None:
 					break
-				print(data)
+				message_type, message_data = data
+				if message_type == logmessage_types.sent:
+					print('>' + message_data)
+				elif message_type == logmessage_types.received:
+					print('<' + message_data)
+				elif message_type == logmessage_types.internal:
+					if message_data == internal_submessage_types.quit:
+						print('--- Quit')
+					elif message_data == internal_submessage_types.error:
+						print('--- Error')
+					else:
+						print('--- ???', message_data)
+				else:
+					print('???', message_type, message_data)
 
 		elif cmd == 'q':
-			control_channel.send('q')
+			control_channel.send((controlmessage_types.quit,))
 			break
 
-		else:
-			control_channel.send(cmd)
+		elif len(cmd) > 0 and cmd[0] == '/':
+			control_channel.send((controlmessage_types.send_line, cmd[1:]))
