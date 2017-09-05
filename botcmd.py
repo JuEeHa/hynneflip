@@ -1,4 +1,5 @@
 import threading
+import unicodedata
 from collections import namedtuple
 
 Entry = namedtuple('Entry', ['hymmnos', 'word_class', 'pronunciation', 'meaning_ja', 'meaning_en', 'dialect'])
@@ -20,7 +21,14 @@ def initialize():
 		for index, entry in enumerate(hymmnos_lexicon):
 			hymmnos_lexicon_by_hymmnos[entry.hymmnos] = index
 
-def handle_command(*, command, channel, response_prefix, irc):
+def case_insensitive_search(needle, haystack):
+	def normalize_casefold(text):
+		# Let's hope this is enough to avoid all corner cases…
+		return unicodedata.normalize('NFKD', text.casefold())
+
+	return normalize_casefold(needle) in normalize_casefold(haystack)
+
+def handle_command(command):
 	# Split the commands into the command itself and the argument. Remove additional whitespace around them
 	command, _, argument = (i.strip() for i in command.partition(' '))
 
@@ -41,16 +49,52 @@ def handle_command(*, command, channel, response_prefix, irc):
 				if entry.word_class:
 					response += entry.word_class + ' '
 				response += entry.meaning_en
+
+				return response
+
 			else:
-				response = 'Word not found "%s"' % argument
+				return 'Word not found "%s"' % argument
 
-			irc.msg(channel, response_prefix + response.encode('utf-8'))
+	elif command == 'english':
+		bytes_length = 0
+		matches = []
+		with hymmnos_lexicon_lock:
+			for entry in hymmnos_lexicon:
+				if case_insensitive_search(argument, entry.meaning_en):
+					matches.append(entry.hymmnos)
 
-	elif commands == 'help':
-		irc.msg(channel, response_prefix + 'Available commands: hymmnos, help'.encode('utf-8'))
+					# Try to estimate how long the response will be, and cut off searching once we run into the limit of 350
+					# (Assuming 160 bytes is enough for prefix, command, channel name, etc.)
+					# Adding 2 bytes for the ', ' between the entries
+					bytes_length += len(entry.hymmnos.encode('utf-8')) + 2
+					if bytes_length > 350:
+						# Remove the one that put us over 350 bytes
+						matches.pop()
+
+						# Have a '…' follow the matches to signal some are missing
+						matches.append('…')
+
+						# Break out of the loop
+
+						break
+
+		if len(matches) == 0:
+			return 'No matches'
+
+		return ', '.join(matches)
+
+	elif command == 'help':
+		if argument == 'hymmnos':
+			return "hymmnos <word> – See the description of a word in Hymmnos (exact match of the 'Hymmnos' field)"
+		elif argument == 'english':
+			return "english <text> – Look for a word in Hymmnos (substring search of the 'Meaning (E)' field)"
+		elif argument == 'help':
+			return "help [<command>] – See list of commands or description for a command"
+		else:
+			return 'Available commands: hymmnos, english, help'
 
 	else:
-		irc.msg(channel, response_prefix + ('Command not recognised: %s' % command).encode('utf-8'))
+		return 'Command not recognised: %s' % command
 
 def handle_message(*, prefix, message, nick, channel, irc):
 	own_nick = irc.get_nick()
@@ -66,7 +110,9 @@ def handle_message(*, prefix, message, nick, channel, irc):
 			response_prefix = b''
 
 		command = command.decode(encoding = 'utf-8', errors = 'replace')
-		handle_command(command = command, channel = channel, response_prefix = response_prefix, irc = irc)
+		response = handle_command(command).encode('utf-8')
+
+		irc.msg(channel, response_prefix + response)
 
 def handle_nonmessage(*, prefix, command, arguments, irc):
 	...
