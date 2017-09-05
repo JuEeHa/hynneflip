@@ -228,7 +228,7 @@ def spawn_loggerthread():
 	return logging_channel, dead_notify_channel
 
 if __name__ == '__main__':
-	server = Server(host = 'irc.freenode.net', port = 6667, nick = 'HynneFlip', realname = 'HynneFlip IRC bot', channels = ['##ingsoc'])
+	server = Server(host = 'irc.freenode.net', port = 6667, nick = 'HynneFlip', realname = 'HynneFlip IRC bot', channels = ['##hymmnos'])
 
 	botcmd.initialize()
 
