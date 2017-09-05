@@ -1,4 +1,8 @@
+import threading
+
 import constants
+
+import botcmd
 
 class API:
 	def __init__(self, serverthread_object):
@@ -115,10 +119,40 @@ def parse_line(line):
 
 	return prefix, command, arguments
 
-def handle_line(line, *, irc):
-	try:
-		prefix, command, arguments = parse_line(line)
-	except LineParsingError:
-		irc.error("Cannot parse line" + line.decode(encoding = 'utf-8', errors = 'replace'))
+class LineHandlerThread(threading.Thread):
+	def __init__(self, line, *, irc):
+		self.line = line
+		self.irc = irc
 
-	# TODO: handle line
+		threading.Thread.__init__(self)
+
+	def run(self):
+		try:
+			prefix, command, arguments = parse_line(self.line)
+		except LineParsingError:
+			irc.error("Cannot parse line" + self.line.decode(encoding = 'utf-8', errors = 'replace'))
+
+		if command.upper() == b'PRIVMSG':
+			# PRIVMSG should have two parameters: recipient and the message
+			assert len(arguments) == 2
+			recipients, message = arguments
+
+			# Prefix contains the nick of the sender, delimited from user and host by '!'
+			nick = prefix.split(b'!')[0]
+
+			# Recipients are in a comma-separate list
+			for recipient in recipients.split(b','):
+				# 'channel' is bit of a misnomer. This is where we'll send the response to
+				# Usually it's the channel, but in queries it's not
+				channel = recipient if recipient[0] == ord('#') else nick
+
+				# Delegate rest to botcmd.handle_message
+				botcmd.handle_message(prefix = prefix, message = message, nick = nick, channel = channel, irc = self.irc)
+
+		else:
+			# Delegate to botcmd.handle_nonmessage
+			botcmd.handle_nonmessage(prefix = prefix, command = command, arguments = arguments, irc = self.irc)
+
+def handle_line(line, *, irc):
+	# Spawn a thread to handle the line
+	LineHandlerThread(line, irc = irc).start()
