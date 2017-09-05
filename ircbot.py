@@ -8,6 +8,7 @@ import channel
 from constants import logmessage_types, internal_submessage_types, controlmessage_types
 
 import line_handling
+import botcmd
 
 Server = namedtuple('Server', ['host', 'port', 'nick', 'realname', 'channels'])
 
@@ -229,6 +230,8 @@ def spawn_loggerthread():
 if __name__ == '__main__':
 	server = Server(host = 'irc.freenode.net', port = 6667, nick = 'HynneFlip', realname = 'HynneFlip IRC bot', channels = ['##ingsoc'])
 
+	botcmd.initialize()
+
 	logging_channel, dead_notify_channel = spawn_loggerthread()
 	control_channel = spawn_serverthread(server, logging_channel)
 
@@ -240,7 +243,9 @@ if __name__ == '__main__':
 
 		cmd = input('')
 		if cmd == 'q':
+			print('Keyboard quit')
 			control_channel.send((controlmessage_types.quit,))
+			logging_channel.send((logmessage_types.internal, internal_submessage_types.quit))
 			break
 
 		elif len(cmd) > 0 and cmd[0] == '/':
