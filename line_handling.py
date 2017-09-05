@@ -4,36 +4,6 @@ import constants
 
 import botcmd
 
-class API:
-	def __init__(self, serverthread_object):
-		# We need to access the internal functions of the ServerThread object in order to send lines etc.
-		self.serverthread_object = serverthread_object
-
-	def send_raw(self, line):
-		self.serverthread_object.send_line_raw(line)
-
-	def msg(self, recipient, message):
-		"""Make sending PRIVMSGs much nicer"""
-		line = b'PRIVMSG ' + recipient + b' :' + message
-		self.serverthread_object.send_line_raw(line)
-
-	def nick(self, nick):
-		# Send a NICK command and update the internal nick tracking state
-		with self.serverthread_object.nick_lock:
-			line = b'NICK ' + nick
-			self.serverthread_object.send_line_raw(line)
-			self.serverthread_object.nick = nick
-
-	def join(self, channel):
-		# Send a JOIN command and update the internal channel tracking state
-		with self.serverthread_object.channels_lock:
-			line = b'JOIN ' + channel
-			self.serverthread_object.send_line_raw(line)
-			self.serverthread_object.channels.add(channel)
-
-	def error(self, message):
-		self.serverthread_object.logging_channel.send((constants.logmessage_types.internal, constants.internal_submessage_types.error, message))
-
 class LineParsingError(Exception): None
 
 # parse_line(line) → prefix, command, arguments

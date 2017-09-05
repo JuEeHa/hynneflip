@@ -11,6 +11,39 @@ import line_handling
 
 Server = namedtuple('Server', ['host', 'port', 'nick', 'realname', 'channels'])
 
+# API(serverthread_object)
+# Create a new API object corresponding to given ServerThread object
+class API:
+	def __init__(self, serverthread_object):
+		# We need to access the internal functions of the ServerThread object in order to send lines etc.
+		self.serverthread_object = serverthread_object
+
+	def send_raw(self, line):
+		self.serverthread_object.send_line_raw(line)
+
+	def msg(self, recipient, message):
+		"""Make sending PRIVMSGs much nicer"""
+		line = b'PRIVMSG ' + recipient + b' :' + message
+		self.serverthread_object.send_line_raw(line)
+
+	def nick(self, nick):
+		# Send a NICK command and update the internal nick tracking state
+		with self.serverthread_object.nick_lock:
+			line = b'NICK ' + nick
+			self.serverthread_object.send_line_raw(line)
+			self.serverthread_object.nick = nick
+
+	def join(self, channel):
+		# Send a JOIN command and update the internal channel tracking state
+		with self.serverthread_object.channels_lock:
+			line = b'JOIN ' + channel
+			self.serverthread_object.send_line_raw(line)
+			self.serverthread_object.channels.add(channel)
+
+	def error(self, message):
+		self.serverthread_object.logging_channel.send((constants.logmessage_types.internal, constants.internal_submessage_types.error, message))
+
+
 # ServerThread(server, control_socket)
 # Creates a new server main loop thread
 class ServerThread(threading.Thread):
@@ -108,7 +141,7 @@ class ServerThread(threading.Thread):
 			return
 
 		# Create an API object to give to outside line handler
-		self.api = line_handling.API(self)
+		self.api = API(self)
 
 		# Run initialization
 		self.send_line_raw(b'USER HynneFlip a a :' + self.server.realname.encode('utf-8'))
