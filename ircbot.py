@@ -59,6 +59,8 @@ class API:
 		self.serverthread_object = serverthread_object
 
 	def send_raw(self, line):
+		"""Sends a raw line (will terminate it itself.
+		Don't use unless you are completely sure you know wha you're doing."""
 		self.serverthread_object.send_line_raw(line)
 
 	def msg(self, recipient, message):
@@ -67,20 +69,26 @@ class API:
 		self.serverthread_object.send_line_raw(line)
 
 	def nick(self, nick):
-		# Send a NICK command and update the internal nick tracking state
+		"""Send a NICK command and update the internal nick tracking state"""
 		with self.serverthread_object.nick_lock:
 			line = b'NICK ' + nick
 			self.serverthread_object.send_line_raw(line)
 			self.serverthread_object.nick = nick
 
+	def get_nick(self):
+		"""Returns current nick"""
+		with self.serverthread_object.nick_lock:
+			return self.serverthread_object.nick
+
 	def join(self, channel):
-		# Send a JOIN command and update the internal channel tracking state
+		"""Send a JOIN command and update the internal channel tracking state"""
 		with self.serverthread_object.channels_lock:
 			line = b'JOIN ' + channel
 			self.serverthread_object.send_line_raw(line)
 			self.serverthread_object.channels.add(channel)
 
 	def error(self, message):
+		"""Log an error"""
 		self.serverthread_object.logging_channel.send((constants.logmessage_types.internal, constants.internal_submessage_types.error, message))
 
 
