@@ -31,8 +31,12 @@ class ServerThread(threading.Thread):
 		self.logging_channel.send((logmessage_types.sent, line.decode(encoding = 'utf-8', errors = 'replace')))
 
 	def handle_line(self, line):
-		# TODO: implement line handling
-		self.logging_channel.send((logmessage_types.received, line.decode(encoding = 'utf-8', errors = 'replace')))
+		command, _, arguments = line.partition(b' ')
+		if command.upper() == b'PING':
+			self.send_line_raw(b'PONG ' + arguments)
+		else:
+			# TODO: implement line handling
+			self.logging_channel.send((logmessage_types.received, line.decode(encoding = 'utf-8', errors = 'replace')))
 
 	def mainloop(self):
 		# Register both the server socket and the control channel to or polling object
@@ -43,6 +47,7 @@ class ServerThread(threading.Thread):
 		# Keep buffer for input
 		server_input_buffer = bytearray()
 
+		# TODO: Implement timeouting
 		quitting = False
 		while not quitting:
 			# Wait until we can do something
