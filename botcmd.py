@@ -19,13 +19,13 @@ def initialize():
 
 		# Then build an index based on the Hymmnos word
 		for index, entry in enumerate(hymmnos_lexicon):
-			hymmnos_lexicon_by_hymmnos[entry.hymmnos] = index
+			hymmnos_lexicon_by_hymmnos[normalize_casefold(entry.hymmnos)] = index
+
+def normalize_casefold(text):
+	# Let's hope this is enough to avoid all corner cases…
+	return unicodedata.normalize('NFKD', text.casefold())
 
 def case_insensitive_search(needle, haystack):
-	def normalize_casefold(text):
-		# Let's hope this is enough to avoid all corner cases…
-		return unicodedata.normalize('NFKD', text.casefold())
-
 	return normalize_casefold(needle) in normalize_casefold(haystack)
 
 def handle_command(command):
@@ -34,8 +34,8 @@ def handle_command(command):
 
 	if command == 'hymmnos':
 		with hymmnos_lexicon_lock:
-			if argument in hymmnos_lexicon_by_hymmnos:
-				entry = hymmnos_lexicon[hymmnos_lexicon_by_hymmnos[argument]]
+			if normalize_casefold(argument) in hymmnos_lexicon_by_hymmnos:
+				entry = hymmnos_lexicon[hymmnos_lexicon_by_hymmnos[normalize_casefold(argument)]]
 
 				# The format is (dialect) hymmnos /pronunciation/ - word-class meaning in English
 				# Dialect, pronunciation and word class can be messing, so we build the response in parts
