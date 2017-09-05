@@ -7,6 +7,8 @@ from collections import namedtuple
 import channel
 from constants import logmessage_types, internal_submessage_types, controlmessage_types
 
+import line_handling
+
 Server = namedtuple('Server', ['host', 'port'])
 
 # ServerThread(server, control_socket)
@@ -28,15 +30,17 @@ class ServerThread(threading.Thread):
 		with self.server_socket_write_lock:
 			self.server_socket.sendall(line + b'\r\n')
 
-		self.logging_channel.send((logmessage_types.sent, line.decode(encoding = 'utf-8', errors = 'replace')))
+		# Don't log PONGs
+		if not (len(line) >= 5 and line[:5] == b'PONG '):
+			self.logging_channel.send((logmessage_types.sent, line.decode(encoding = 'utf-8', errors = 'replace')))
 
 	def handle_line(self, line):
 		command, _, arguments = line.partition(b' ')
 		if command.upper() == b'PING':
 			self.send_line_raw(b'PONG ' + arguments)
 		else:
-			# TODO: implement line handling
 			self.logging_channel.send((logmessage_types.received, line.decode(encoding = 'utf-8', errors = 'replace')))
+			line_handling.handle_line(line, irc = self.api)
 
 	def mainloop(self):
 		# Register both the server socket and the control channel to or polling object
@@ -80,7 +84,8 @@ class ServerThread(threading.Thread):
 						self.send_line_raw(line)
 
 					else:
-						self.logging_channel.send((logmessage_types.internal, internal_submessage_types.error))
+						error_message = 'Unknown control message: %s' % repr((command_type, *arguments))
+						self.logging_channel.send((logmessage_types.internal, internal_submessage_types.error, error_message))
 
 				else:
 					assert False #unreachable
@@ -92,9 +97,12 @@ class ServerThread(threading.Thread):
 			self.server_socket = socket.create_connection(address)
 		except ConnectionRefusedError:
 			# Tell controller we failed
-			self.logging_channel.send((logmessage_types.internal, internal_submessage_types.error))
+			self.logging_channel.send((logmessage_types.internal, internal_submessage_types.error, "Can't connect to %s:%s" % address))
 			self.logging_channel.send((logmessage_types.internal, internal_submessage_types.quit))
 			return
+
+		# Create an API object to give to outside line handler
+		self.api = line_handling.API(self)
 
 		# Run initialization
 		# TODO: read nick/username/etc. from a config
@@ -130,16 +138,20 @@ if __name__ == '__main__':
 				data = logging_channel.recv(blocking = False)
 				if data == None:
 					break
-				message_type, message_data = data
+				message_type, *message_data = data
 				if message_type == logmessage_types.sent:
-					print('>' + message_data)
+					assert len(message_data) == 1
+					print('>' + message_data[0])
 				elif message_type == logmessage_types.received:
-					print('<' + message_data)
+					assert len(message_data) == 1
+					print('<' + message_data[0])
 				elif message_type == logmessage_types.internal:
-					if message_data == internal_submessage_types.quit:
+					if message_data[0] == internal_submessage_types.quit:
+						assert len(message_data) == 1
 						print('--- Quit')
-					elif message_data == internal_submessage_types.error:
-						print('--- Error')
+					elif message_data[0] == internal_submessage_types.error:
+						assert len(message_data) == 2
+						print('--- Error', message_data[1])
 					else:
 						print('--- ???', message_data)
 				else:
