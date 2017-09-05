@@ -1,4 +1,4 @@
-Hymmnobot
+HynneFlip
 =========
 IRC bot for querying Hymmnos lexicon.
 
