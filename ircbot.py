@@ -122,7 +122,11 @@ if __name__ == '__main__':
 	while True:
 		cmd = input(': ')
 		if cmd == '':
-			print(logging_channel.recv(blocking = False))
+			while True:
+				data = logging_channel.recv(blocking = False)
+				if data == None:
+					break
+				print(data)
 
 		elif cmd == 'q':
 			control_channel.send('q')
