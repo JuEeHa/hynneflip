@@ -13,13 +13,16 @@ class ServerThread(threading.Thread):
 		self.server = server
 		self.control_socket = control_socket
 
+		self.server_socket_write_lock = threading.Lock()
+
 		threading.Thread.__init__(self)
 
 	def send_line_raw(self, line):
 		# Sanitize line just in case
 		line = line.replace(b'\r', b'').replace(b'\n', b'')[:510]
 
-		self.server_socket.sendall(line + b'\r\n')
+		with self.server_socket_write_lock:
+			self.server_socket.sendall(line + b'\r\n')
 
 		# FIXME: print is not thread safe
 		print('>' + line.decode(encoding = 'utf-8', errors = 'replace'))
@@ -37,11 +40,9 @@ class ServerThread(threading.Thread):
 
 		# Keep buffers for input and output
 		server_input_buffer = bytearray()
-		server_output_buffer = bytearray()
 		control_input_buffer = bytearray()
 
 		quitting = False
-		writing = False
 		while not quitting:
 			# Wait until we can do something
 			for fd, event in poll.poll():
@@ -60,11 +61,6 @@ class ServerThread(threading.Thread):
 
 							self.handle_line(line)
 
-					# Ready to send, send buffered output as far as possible
-					if event | select.POLLOUT:
-						sent = self.server_socket.send(server_output_buffer)
-						server_output_buffer = server_output_buffer[sent:]
-
 				# Control
 				elif fd == self.control_socket.fileno():
 					# Read into buffer and handle full commands
@@ -77,17 +73,6 @@ class ServerThread(threading.Thread):
 
 				else:
 					assert False #unreachable
-
-			# See if we have to change what we're listening for
-			if not writing and len(server_output_buffer) > 0:
-				# Mark we're listening to socket becoming writable, and start listening
-				writing = True
-				poll.modify(self.server_socket, select.POLLIN | select.POLLOUT)
-
-			elif writing and len(server_output_buffer) == 0:
-				# Mark we're not listening to socket becoming writable, and stop listening
-				writing = False
-				poll.modify(self.server_socket, select.POLLIN)
 
 	def run(self):
 		# Connect to given server
@@ -140,6 +125,7 @@ if __name__ == '__main__':
 			print(control_messages.decode(encoding = 'utf-8', errors = 'replace'))
 
 		elif cmd == 'q':
+			control_socket.sendall(b'Q\n')
 			control_socket.close()
 			break
 
