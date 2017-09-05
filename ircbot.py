@@ -57,7 +57,7 @@ class ServerThread(threading.Thread):
 
 						# Try to see if we have a full line ending with \r\n in the buffer
 						# If yes, handle it
-						if b'\r\n' in server_input_buffer:
+						while b'\r\n' in server_input_buffer:
 							# Newline was found, split buffer
 							line, _, server_input_buffer = server_input_buffer.partition(b'\r\n')
 
