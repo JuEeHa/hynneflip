@@ -9,7 +9,7 @@ from constants import logmessage_types, internal_submessage_types, controlmessag
 
 import line_handling
 
-Server = namedtuple('Server', ['host', 'port'])
+Server = namedtuple('Server', ['host', 'port', 'nick', 'realname', 'channels'])
 
 # ServerThread(server, control_socket)
 # Creates a new server main loop thread
@@ -20,6 +20,12 @@ class ServerThread(threading.Thread):
 		self.logging_channel = logging_channel
 
 		self.server_socket_write_lock = threading.Lock()
+
+		self.nick = None
+		self.nick_lock = threading.Lock()
+
+		self.channels = set()
+		self.channels_lock = threading.Lock()
 
 		threading.Thread.__init__(self)
 
@@ -105,9 +111,13 @@ class ServerThread(threading.Thread):
 		self.api = line_handling.API(self)
 
 		# Run initialization
-		# TODO: read nick/username/etc. from a config
-		self.send_line_raw(b'NICK HynneFlip')
-		self.send_line_raw(b'USER HynneFlip a a :HynneFlip IRC bot')
+		self.send_line_raw(b'USER HynneFlip a a :' + self.server.realname.encode('utf-8'))
+
+		# Set up nick and channels
+		self.api.nick(self.server.nick.encode('utf-8'))
+
+		for channel in self.server.channels:
+			self.api.join(channel.encode('utf-8'))
 
 		# Run mainloop
 		self.mainloop()
@@ -129,7 +139,8 @@ def spawn_serverthread(server):
 	return (control_channel, logging_channel)
 
 if __name__ == '__main__':
-	control_channel, logging_channel = spawn_serverthread(Server('irc.freenode.net', 6667))
+	server = Server(host = 'irc.freenode.net', port = 6667, nick = 'HynneFlip', realname = 'HynneFlip IRC bot', channels = ['##ingsoc'])
+	control_channel, logging_channel = spawn_serverthread(server)
 
 	while True:
 		cmd = input(': ')
