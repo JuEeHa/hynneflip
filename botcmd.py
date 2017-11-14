@@ -137,13 +137,13 @@ def handle_command(command):
 		if argument == 'hymmnos':
 			return "hymmnos <word> – See the description of a word in Hymmnos (exact match of the 'Hymmnos' field)"
 		elif argument == 'pastalie':
-			return "pastalie <verb> – Give the root of a Pastalie verb and define its emotions"
+			return "pastalie <verb> – Give the root of a Pastalie verb and define its emotions (assumed to be upper case)"
 		elif argument == 'english':
 			return "english <text> – Look for a word in Hymmnos (substring search of the 'Meaning (E)' field)"
 		elif argument == 'help':
 			return "help [<command>] – See list of commands or description for a command"
 		else:
-			return 'Available commands: hymmnos, english, help'
+			return 'Available commands: hymmnos, pastalie, english, help'
 
 	else:
 		return 'Command not recognised: %s' % command
