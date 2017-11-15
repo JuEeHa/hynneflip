@@ -86,22 +86,23 @@ def handle_command(command):
 	elif command == 'pastalie':
 		root, emotions = linguistics.parse_pastalie_verb(argument)
 
-		# Eliminate duplicated emotions but keep order (note: O(n²), replace with O(n) if this becomes a problem)
-		emotions_dedupped = []
-		for emotion in emotions:
-			if emotion not in emotions_dedupped:
-				emotions_dedupped.append(emotion)
-
+		emotions_defined = set()
 		emotion_definitions = []
-		for emotion in emotions_dedupped:
-			with emotion_lexicon_lock:
-				if normalize_casefold(emotion) in emotion_lexicon:
-					emotion_entry = emotion_lexicon[normalize_casefold(emotion)]
+		for emotion in emotions:
+			if emotion not in emotions_defined:
+				emotions_defined.add(emotion)
 
-					emotion_definitions.append('%s: %s' % (emotion_entry.hymmnos, emotion_entry.meaning_en))
+				with emotion_lexicon_lock:
+					if normalize_casefold(emotion) in emotion_lexicon:
+						emotion_entry = emotion_lexicon[normalize_casefold(emotion)]
 
-				else:
-					emotion_definitions.append('(Unknown: %s)' % emotion)
+						emotion_definitions.append('%s: %s' % (emotion_entry.hymmnos, emotion_entry.meaning_en))
+
+					else:
+						emotion_definitions.append('(Unknown: %s)' % emotion)
+
+			else:
+				emotion_definitions.append(emotion)
 
 		return '%s <%s>' % (root, '; '.join(emotion_definitions))
 
