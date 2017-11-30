@@ -69,6 +69,79 @@ def construct_word_definition(entry):
 
 	return response
 
+def define_emotions(emotions):
+	emotions_defined = set()
+	emotion_definitions = []
+
+	for emotion in emotions:
+		if emotion not in emotions_defined:
+			emotions_defined.add(emotion)
+
+			with emotion_lexicon_lock:
+				if normalize_casefold(emotion) in emotion_lexicon:
+					emotion_entry = emotion_lexicon[normalize_casefold(emotion)]
+
+					emotion_definitions.append('%s: %s' % (emotion_entry.hymmnos, emotion_entry.meaning_en))
+
+				else:
+					emotion_definitions.append('(Unknown: %s)' % emotion)
+
+		else:
+			emotion_definitions.append(emotion)
+
+	return emotion_definitions
+
+def gloss_word(hymmnos):
+		normal_word = False
+		pastalie_verb = False
+
+		# Check if the word is a normal word.
+		with hymmnos_lexicon_lock:
+			if normalize_casefold(hymmnos) in hymmnos_lexicon_by_hymmnos:
+				# It is, mark it as such and put its definition into raw_definition
+				entry = hymmnos_lexicon[hymmnos_lexicon_by_hymmnos[normalize_casefold(hymmnos)]]
+
+				# Make sure the letter case matches here, due to pastalie verbs
+				if entry.hymmnos == hymmnos:
+					raw_definition = entry.meaning_en
+					normal_word = True
+
+		# If it's not a normal word, try to see if it might be a pastalie verb
+		if not normal_word:
+			root, emotions = linguistics.parse_pastalie_verb(hymmnos)
+
+			with hymmnos_lexicon_lock:
+				if normalize_casefold(root) in hymmnos_lexicon_by_hymmnos:
+					# It is, mark it as such and put its definition into raw_definition
+					entry = hymmnos_lexicon[hymmnos_lexicon_by_hymmnos[normalize_casefold(root)]]
+					raw_definition = entry.meaning_en
+					pastalie_verb = True
+
+		if not normal_word and not pastalie_verb:
+			# We couldn't find this word, return '?'
+			return '?'
+
+		# It's either a normal word of a pastalie verb, so raw_definition has definition of the word/root
+		# Including the definition up to first ( is a hack to generate quick and dirty glosses
+
+		parenthesis_index = raw_definition.find('(')
+
+		if parenthesis_index == -1:
+			# No psrenthesis
+			definition = raw_definition
+
+		else:
+			# Up to first (, remove superfluous whitespace
+			definition = raw_definition[:parenthesis_index].strip()
+
+		if pastalie_verb:
+			# If we have a pastalie verb, define emotions and append them to the definition
+			emotion_definitions = define_emotions(emotions)
+
+			definition += ' <' + '; '.join(emotion_definitions) + '>'
+
+		return definition
+
 def handle_command(command):
 	# Split the commands into the command itself and the argument. Remove additional whitespace around them
 	command, _, argument = (i.strip() for i in command.partition(' '))
@@ -86,25 +159,22 @@ def handle_command(command):
 	elif command == 'pastalie':
 		root, emotions = linguistics.parse_pastalie_verb(argument)
 
-		emotions_defined = set()
-		emotion_definitions = []
-		for emotion in emotions:
-			if emotion not in emotions_defined:
-				emotions_defined.add(emotion)
-
-				with emotion_lexicon_lock:
-					if normalize_casefold(emotion) in emotion_lexicon:
-						emotion_entry = emotion_lexicon[normalize_casefold(emotion)]
-
-						emotion_definitions.append('%s: %s' % (emotion_entry.hymmnos, emotion_entry.meaning_en))
-
-					else:
-						emotion_definitions.append('(Unknown: %s)' % emotion)
-
-			else:
-				emotion_definitions.append(emotion)
+		emotion_definitions = define_emotions(emotions)
 
 		return '%s <%s>' % (root, '; '.join(emotion_definitions))
+
+	elif command == 'gloss':
+		sentence_parts = linguistics.parse_sentence(argument)
+
+		gloss_text = ''
+		for is_word, text in sentence_parts:
+			if is_word:
+				gloss_text += '[%s]' % gloss_word(text)
+
+			else:
+				gloss_text += text
+
+		return gloss_text
 
 	elif command == 'english':
 		bytes_length = 0
@@ -139,12 +209,14 @@ def handle_command(command):
 			return "hymmnos <word> – See the description of a word in Hymmnos (exact match of the 'Hymmnos' field)"
 		elif argument == 'pastalie':
 			return "pastalie <verb> – Give the root of a Pastalie verb and define its emotions (assumed to be upper case)"
+		elif argument == 'gloss':
+			return "gloss <sentence> – Try to gloss a sentence. '.' is always considered part of a word."
 		elif argument == 'english':
 			return "english <text> – Look for a word in Hymmnos (substring search of the 'Meaning (E)' field)"
 		elif argument == 'help':
 			return "help [<command>] – See list of commands or description for a command"
 		else:
-			return 'Available commands: hymmnos, pastalie, english, help'
+			return 'Available commands: hymmnos, pastalie, gloss, english, help'
 
 	else:
 		return 'Command not recognised: %s' % command
