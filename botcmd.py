@@ -95,27 +95,25 @@ def gloss_word(hymmnos):
 		normal_word = False
 		pastalie_verb = False
 
-		# Check if the word is a normal word.
-		with hymmnos_lexicon_lock:
-			if normalize_casefold(hymmnos) in hymmnos_lexicon_by_hymmnos:
-				# It is, mark it as such and put its definition into raw_definition
-				entry = hymmnos_lexicon[hymmnos_lexicon_by_hymmnos[normalize_casefold(hymmnos)]]
+		# Check if the word is a pastalie verb
+		root, emotions = linguistics.parse_pastalie_verb(hymmnos)
 
-				# Make sure the letter case matches here, due to pastalie verbs
-				if entry.hymmnos == hymmnos:
-					raw_definition = entry.meaning_en
-					normal_word = True
-
-		# If it's not a normal word, try to see if it might be a pastalie verb
-		if not normal_word:
-			root, emotions = linguistics.parse_pastalie_verb(hymmnos)
-
+		if len(emotions) != 0:
 			with hymmnos_lexicon_lock:
 				if normalize_casefold(root) in hymmnos_lexicon_by_hymmnos:
 					# It is, mark it as such and put its definition into raw_definition
 					entry = hymmnos_lexicon[hymmnos_lexicon_by_hymmnos[normalize_casefold(root)]]
 					raw_definition = entry.meaning_en
 					pastalie_verb = True
+
+		# If it's not a pastalie verb, check if it might be a normal word
+		if not pastalie_verb:
+			with hymmnos_lexicon_lock:
+				if normalize_casefold(hymmnos) in hymmnos_lexicon_by_hymmnos:
+					# It is, mark it as such and put its definition into raw_definition
+					entry = hymmnos_lexicon[hymmnos_lexicon_by_hymmnos[normalize_casefold(hymmnos)]]
+					raw_definition = entry.meaning_en
+					normal_word = True
 
 		if not normal_word and not pastalie_verb:
 			# We couldn't find this word, return '?'
