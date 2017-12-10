@@ -94,7 +94,7 @@ class API:
 
 	def error(self, message):
 		"""Log an error"""
-		self.serverthread_object.logging_channel.send((constants.logmessage_types.internal, constants.internal_submessage_types.error, message))
+		self.serverthread_object.logging_channel.send((logmessage_types.internal, internal_submessage_types.error, message))
 
 
 # ServerThread(server, control_socket)
