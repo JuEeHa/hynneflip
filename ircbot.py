@@ -7,8 +7,9 @@ from collections import namedtuple
 import channel
 from constants import logmessage_types, internal_submessage_types, controlmessage_types
 
-import line_handling
 import botcmd
+import cron
+import line_handling
 
 Server = namedtuple('Server', ['host', 'port', 'nick', 'realname', 'channels'])
 
@@ -60,14 +61,18 @@ class API:
 		self.serverthread_object = serverthread_object
 
 	def send_raw(self, line):
-		"""Sends a raw line (will terminate it itself.
-		Don't use unless you are completely sure you know wha you're doing."""
+		"""Sends a raw line (will terminate it itself.)
+		Don't use unless you are completely sure you know what you're doing."""
 		self.serverthread_object.send_line_raw(line)
 
 	def msg(self, recipient, message):
 		"""Make sending PRIVMSGs much nicer"""
 		line = b'PRIVMSG ' + recipient + b' :' + message
 		self.serverthread_object.send_line_raw(line)
+
+	def bot_response(self, recipient, message):
+		"""Prefix message with ZWSP and convert from unicode to bytestring."""
+		self.msg(recipient, ('\u200b' + message).encode('utf-8'))
 
 	def nick(self, nick):
 		"""Send a NICK command and update the internal nick tracking state"""
@@ -90,15 +95,16 @@ class API:
 
 	def error(self, message):
 		"""Log an error"""
-		self.serverthread_object.logging_channel.send((constants.logmessage_types.internal, constants.internal_submessage_types.error, message))
+		self.serverthread_object.logging_channel.send((logmessage_types.internal, internal_submessage_types.error, message))
 
 
 # ServerThread(server, control_socket)
 # Creates a new server main loop thread
 class ServerThread(threading.Thread):
-	def __init__(self, server, control_channel, logging_channel):
+	def __init__(self, server, control_channel, cron_control_channel, logging_channel):
 		self.server = server
 		self.control_channel = control_channel
+		self.cron_control_channel = cron_control_channel
 		self.logging_channel = logging_channel
 
 		self.server_socket_write_lock = threading.Lock()
@@ -118,14 +124,18 @@ class ServerThread(threading.Thread):
 		with self.server_socket_write_lock:
 			self.server_socket.sendall(line + b'\r\n')
 
-		# Don't log PONGs
-		if not (len(line) >= 5 and line[:5] == b'PONG '):
+		# Don't log PINGs or PONGs
+		if not (len(line) >= 5 and (line[:5] == b'PING ' or line[:5] == b'PONG ')):
 			self.logging_channel.send((logmessage_types.sent, line.decode(encoding = 'utf-8', errors = 'replace')))
 
 	def handle_line(self, line):
 		command, _, arguments = line.partition(b' ')
-		if command.upper() == b'PING':
+		split = line.split(b' ')
+		if len(split) >= 1 and split[0].upper() == b'PING':
 			self.send_line_raw(b'PONG ' + arguments)
+		elif len(split) >= 2 and split[0][0:1] == b':' and split[1].upper() == b'PONG':
+			# No need to do anything special for PONGs
+			pass
 		else:
 			self.logging_channel.send((logmessage_types.received, line.decode(encoding = 'utf-8', errors = 'replace')))
 			line_handling.handle_line(line, irc = self.api)
@@ -159,6 +169,10 @@ class ServerThread(threading.Thread):
 
 							self.handle_line(line)
 
+					# Remove possible pending ping timeout timer and reset ping timer to 5 minutes
+					cron.delete(self.cron_control_channel, self.control_channel, (controlmessage_types.ping_timeout,))
+					cron.reschedule(self.cron_control_channel, 5 * 60, self.control_channel, (controlmessage_types.ping,))
+
 				# Control
 				elif fd == self.control_channel.fileno():
 					command_type, *arguments = self.control_channel.recv()
@@ -170,6 +184,16 @@ class ServerThread(threading.Thread):
 						irc_command, space, arguments = arguments[0].encode('utf-8').partition(b' ')
 						line = irc_command.upper() + space + arguments
 						self.send_line_raw(line)
+
+					elif command_type == controlmessage_types.ping:
+						assert len(arguments) == 0
+						self.send_line_raw(b'PING :foo')
+						# Reset ping timeout timer to 3 minutes
+						cron.reschedule(self.cron_control_channel, 3 * 60, self.control_channel, (controlmessage_types.ping_timeout,))
+
+					elif command_type == controlmessage_types.ping_timeout:
+						self.logging_channel.send((logmessage_types.internal, internal_submessage_types.error, 'Ping timeout'))
+						quitting = True
 
 					else:
 						error_message = 'Unknown control message: %s' % repr((command_type, *arguments))
@@ -211,12 +235,15 @@ class ServerThread(threading.Thread):
 		# Tell controller we're quiting
 		self.logging_channel.send((logmessage_types.internal, internal_submessage_types.quit))
 
+		# Tell cron we're quiting
+		cron.quit(cron_control_channel)
+
 # spawn_serverthread(server, logging_channel) → control_channel
 # Creates a ServerThread for given server and returns the channel for controlling it
-def spawn_serverthread(server, logging_channel):
+def spawn_serverthread(server, cron_control_channel, logging_channel):
 	thread_control_socket, spawner_control_socket = socket.socketpair()
 	control_channel = channel.Channel()
-	ServerThread(server, control_channel, logging_channel).start()
+	ServerThread(server, control_channel, cron_control_channel, logging_channel).start()
 	return control_channel
 
 # spawn_loggerthread() → logging_channel, dead_notify_channel
@@ -232,8 +259,9 @@ if __name__ == '__main__':
 
 	botcmd.initialize()
 
+	cron_control_channel = cron.start()
 	logging_channel, dead_notify_channel = spawn_loggerthread()
-	control_channel = spawn_serverthread(server, logging_channel)
+	control_channel = spawn_serverthread(server, cron_control_channel, logging_channel)
 
 	while True:
 		message = dead_notify_channel.recv(blocking = False)
@@ -246,6 +274,7 @@ if __name__ == '__main__':
 			print('Keyboard quit')
 			control_channel.send((controlmessage_types.quit,))
 			logging_channel.send((logmessage_types.internal, internal_submessage_types.quit))
+			cron.quit(cron_control_channel)
 			break
 
 		elif len(cmd) > 0 and cmd[0] == '/':
