@@ -7,4 +7,7 @@ class internal_submessage_types(enum.Enum):
 	quit, error = range(2)
 
 class controlmessage_types(enum.Enum):
-	quit, send_line = range(2)
+	quit, send_line, ping, ping_timeout = range(4)
+
+class cronmessage_types(enum.Enum):
+	quit, schedule, delete, reschedule = range(4)
