@@ -60,8 +60,8 @@ class API:
 		self.serverthread_object = serverthread_object
 
 	def send_raw(self, line):
-		"""Sends a raw line (will terminate it itself.
-		Don't use unless you are completely sure you know wha you're doing."""
+		"""Sends a raw line (will terminate it itself.)
+		Don't use unless you are completely sure you know what you're doing."""
 		self.serverthread_object.send_line_raw(line)
 
 	def msg(self, recipient, message):
