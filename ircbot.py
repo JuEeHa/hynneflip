@@ -98,7 +98,7 @@ class API:
 		self.serverthread_object.logging_channel.send((logmessage_types.internal, internal_submessage_types.error, message))
 
 
-# ServerThread(server, control_socket)
+# ServerThread(server, control_channel, cron_control_channel, logging_channel)
 # Creates a new server main loop thread
 class ServerThread(threading.Thread):
 	def __init__(self, server, control_channel, cron_control_channel, logging_channel):
@@ -141,7 +141,7 @@ class ServerThread(threading.Thread):
 			line_handling.handle_line(line, irc = self.api)
 
 	def mainloop(self):
-		# Register both the server socket and the control channel to or polling object
+		# Register both the server socket and the control channel to a polling object
 		poll = select.poll()
 		poll.register(self.server_socket, select.POLLIN)
 		poll.register(self.control_channel, select.POLLIN)
@@ -192,6 +192,7 @@ class ServerThread(threading.Thread):
 
 					elif command_type == controlmessage_types.ping_timeout:
 						self.logging_channel.send((logmessage_types.internal, internal_submessage_types.error, 'Ping timeout'))
+						# TODO: Don't quit, restart
 						quitting = True
 
 					else:
@@ -237,7 +238,7 @@ class ServerThread(threading.Thread):
 		# Tell cron we're quiting
 		cron.quit(cron_control_channel)
 
-# spawn_serverthread(server, logging_channel) → control_channel
+# spawn_serverthread(server, cron_control_channel, logging_channel) → control_channel
 # Creates a ServerThread for given server and returns the channel for controlling it
 def spawn_serverthread(server, cron_control_channel, logging_channel):
 	thread_control_socket, spawner_control_socket = socket.socketpair()
