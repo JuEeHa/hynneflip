@@ -2,6 +2,7 @@
 import select
 import socket
 import threading
+import time
 from collections import namedtuple
 
 import channel
@@ -109,6 +110,9 @@ class ServerThread(threading.Thread):
 
 		self.server_socket_write_lock = threading.Lock()
 
+		self.last_send = 0
+		self.last_send_lock = threading.Lock()
+
 		self.nick = None
 		self.nick_lock = threading.Lock()
 
@@ -120,6 +124,20 @@ class ServerThread(threading.Thread):
 	def send_line_raw(self, line):
 		# Sanitize line just in case
 		line = line.replace(b'\r', b'').replace(b'\n', b'')[:510]
+
+		with self.last_send_lock:
+			now = time.monotonic()
+			if now - self.last_send < 1:
+				# Schedule our message sending one second after the last one
+				self.last_send += 1
+				wait = self.last_send - now
+
+			else:
+				self.last_send = now
+				wait = 0
+
+		if wait > 0:
+			time.sleep(wait)
 
 		with self.server_socket_write_lock:
 			self.server_socket.sendall(line + b'\r\n')
