@@ -149,7 +149,6 @@ class ServerThread(threading.Thread):
 		# Keep buffer for input
 		server_input_buffer = bytearray()
 
-		# TODO: Implement timeouting
 		quitting = False
 		while not quitting:
 			# Wait until we can do something
