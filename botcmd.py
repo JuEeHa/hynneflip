@@ -17,6 +17,9 @@ def initialize():
 	read_hymmnos_lexicon()
 	read_emotion_lexicon()
 
+def on_connect(*, irc):
+	pass
+
 def read_hymmnos_lexicon():
 	global hymmnos_lexicon, hymmnos_lexicon_by_hymmnos, hymmnos_lexicon_lock
 

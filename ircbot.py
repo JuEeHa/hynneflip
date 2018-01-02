@@ -2,6 +2,7 @@
 import select
 import socket
 import threading
+import time
 from collections import namedtuple
 
 import channel
@@ -60,6 +61,9 @@ class API:
 		# We need to access the internal functions of the ServerThread object in order to send lines etc.
 		self.serverthread_object = serverthread_object
 
+		# Have the cron object accessible more easily
+		self.cron = serverthread_object.cron_control_channel
+
 	def send_raw(self, line):
 		"""Sends a raw line (will terminate it itself.)
 		Don't use unless you are completely sure you know what you're doing."""
@@ -98,7 +102,7 @@ class API:
 		self.serverthread_object.logging_channel.send((logmessage_types.internal, internal_submessage_types.error, message))
 
 
-# ServerThread(server, control_socket)
+# ServerThread(server, control_channel, cron_control_channel, logging_channel)
 # Creates a new server main loop thread
 class ServerThread(threading.Thread):
 	def __init__(self, server, control_channel, cron_control_channel, logging_channel):
@@ -108,6 +112,9 @@ class ServerThread(threading.Thread):
 		self.logging_channel = logging_channel
 
 		self.server_socket_write_lock = threading.Lock()
+
+		self.last_send = 0
+		self.last_send_lock = threading.Lock()
 
 		self.nick = None
 		self.nick_lock = threading.Lock()
@@ -120,6 +127,20 @@ class ServerThread(threading.Thread):
 	def send_line_raw(self, line):
 		# Sanitize line just in case
 		line = line.replace(b'\r', b'').replace(b'\n', b'')[:510]
+
+		with self.last_send_lock:
+			now = time.monotonic()
+			if now - self.last_send < 1:
+				# Schedule our message sending one second after the last one
+				self.last_send += 1
+				wait = self.last_send - now
+
+			else:
+				self.last_send = now
+				wait = 0
+
+		if wait > 0:
+			time.sleep(wait)
 
 		with self.server_socket_write_lock:
 			self.server_socket.sendall(line + b'\r\n')
@@ -141,7 +162,7 @@ class ServerThread(threading.Thread):
 			line_handling.handle_line(line, irc = self.api)
 
 	def mainloop(self):
-		# Register both the server socket and the control channel to or polling object
+		# Register both the server socket and the control channel to a polling object
 		poll = select.poll()
 		poll.register(self.server_socket, select.POLLIN)
 		poll.register(self.control_channel, select.POLLIN)
@@ -149,9 +170,9 @@ class ServerThread(threading.Thread):
 		# Keep buffer for input
 		server_input_buffer = bytearray()
 
-		# TODO: Implement timeouting
 		quitting = False
-		while not quitting:
+		reconnecting = False
+		while not quitting and not reconnecting:
 			# Wait until we can do something
 			for fd, event in poll.poll():
 				# Server
@@ -159,6 +180,14 @@ class ServerThread(threading.Thread):
 					# Ready to receive, read into buffer and handle full messages
 					if event | select.POLLIN:
 						data = self.server_socket.recv(1024)
+
+						# Mo data to be read even as POLLIN triggered → connection has broken
+						# Log it and try reconnecting
+						if data == b'':
+							self.logging_channel.send((logmessage_types.internal, internal_submessage_types.error, 'Empty read'))
+							reconnecting = True
+							break
+
 						server_input_buffer.extend(data)
 
 						# Try to see if we have a full line ending with \r\n in the buffer
@@ -169,9 +198,13 @@ class ServerThread(threading.Thread):
 
 							self.handle_line(line)
 
-					# Remove possible pending ping timeout timer and reset ping timer to 5 minutes
-					cron.delete(self.cron_control_channel, self.control_channel, (controlmessage_types.ping_timeout,))
-					cron.reschedule(self.cron_control_channel, 5 * 60, self.control_channel, (controlmessage_types.ping,))
+						# Remove possible pending ping timeout timer and reset ping timer to 3 minutes
+						cron.delete(self.cron_control_channel, self.control_channel, (controlmessage_types.ping_timeout,))
+						cron.reschedule(self.cron_control_channel, 3 * 60, self.control_channel, (controlmessage_types.ping,))
+
+					else:
+						error_message = 'Event on server socket: %s' % event
+						self.logging_channel.send((logmessage_types.internal, internal_submessage_types.error, error_message))
 
 				# Control
 				elif fd == self.control_channel.fileno():
@@ -188,12 +221,15 @@ class ServerThread(threading.Thread):
 					elif command_type == controlmessage_types.ping:
 						assert len(arguments) == 0
 						self.send_line_raw(b'PING :foo')
-						# Reset ping timeout timer to 3 minutes
-						cron.reschedule(self.cron_control_channel, 3 * 60, self.control_channel, (controlmessage_types.ping_timeout,))
+						# Reset ping timeout timer to 2 minutes
+						cron.reschedule(self.cron_control_channel, 2 * 60, self.control_channel, (controlmessage_types.ping_timeout,))
 
 					elif command_type == controlmessage_types.ping_timeout:
 						self.logging_channel.send((logmessage_types.internal, internal_submessage_types.error, 'Ping timeout'))
-						quitting = True
+						reconnecting = True
+
+					elif command_type == controlmessage_types.reconnect:
+						reconnecting = True
 
 					else:
 						error_message = 'Unknown control message: %s' % repr((command_type, *arguments))
@@ -202,35 +238,87 @@ class ServerThread(threading.Thread):
 				else:
 					assert False #unreachable
 
+		if reconnecting:
+			return True
+		else:
+			return False
+
 	def run(self):
-		# Connect to given server
-		address = (self.server.host, self.server.port)
-		try:
-			self.server_socket = socket.create_connection(address)
-		except ConnectionRefusedError:
-			# Tell controller we failed
-			self.logging_channel.send((logmessage_types.internal, internal_submessage_types.error, "Can't connect to %s:%s" % address))
-			self.logging_channel.send((logmessage_types.internal, internal_submessage_types.quit))
-			return
+		while True:
+			# Connect to given server
+			address = (self.server.host, self.server.port)
+			try:
+				self.server_socket = socket.create_connection(address)
+			except (ConnectionRefusedError, socket.gaierror):
+				# Tell controller we failed
+				self.logging_channel.send((logmessage_types.internal, internal_submessage_types.error, "Can't connect to %s:%s" % address))
 
-		# Create an API object to give to outside line handler
-		self.api = API(self)
+				# Try reconnecting in a minute
+				cron.reschedule(self.cron_control_channel, 60, self.control_channel, (controlmessage_types.reconnect,))
 
-		# Run initialization
-		self.send_line_raw(b'USER HynneFlip a a :' + self.server.realname.encode('utf-8'))
+				# Handle messages
+				reconnect = True
+				while True:
+					command_type, *arguments = self.control_channel.recv()
 
-		# Set up nick and channels
-		self.api.nick(self.server.nick.encode('utf-8'))
+					if command_type == controlmessage_types.reconnect:
+						break
 
-		for channel in self.server.channels:
-			self.api.join(channel.encode('utf-8'))
+					elif command_type == controlmessage_types.quit:
+						reconnect = False
+						break
 
-		# Run mainloop
-		self.mainloop()
+					else:
+						error_message = 'Control message not supported when not connected: %s' % repr((command_type, *arguments))
+						self.logging_channel.send((logmessage_types.internal, internal_submessage_types.error, error_message))
 
-		# Tell the server we're quiting
-		self.send_line_raw(b'QUIT :HynneFlip exiting normally')
-		self.server_socket.close()
+				# Remove the reconnect message in case we were told to reconnnect manually
+				cron.delete(self.cron_control_channel, self.control_channel, (controlmessage_types.reconnect,))
+
+				if reconnect:
+					continue
+				else:
+					break
+
+			# Create an API object to give to outside line handler
+			self.api = API(self)
+
+			try:
+				# Run initialization
+				self.send_line_raw(b'USER HynneFlip a a :' + self.server.realname.encode('utf-8'))
+
+				# Set up nick
+				self.api.nick(self.server.nick.encode('utf-8'))
+
+				# Run the on_connect hook, to allow further setup
+				botcmd.on_connect(irc = self.api)
+
+				# Join channels
+				for channel in self.server.channels:
+					self.api.join(channel.encode('utf-8'))
+
+				# Schedule a ping to be sent in 3 minutes of no activity
+				cron.reschedule(self.cron_control_channel, 3 * 60, self.control_channel, (controlmessage_types.ping,))
+
+				# Run mainloop
+				reconnecting = self.mainloop()
+
+				if not reconnecting:
+					# Tell the server we're quiting
+					self.send_line_raw(b'QUIT :HynneFlip exiting normally')
+					self.server_socket.close()
+
+					break
+
+				else:
+					# Tell server we're reconnecting
+					self.send_line_raw(b'QUIT :Reconnecting')
+					self.server_socket.close()
+
+			except BrokenPipeError as err:
+				# Connection broke, log it and try to reconnect
+				self.logging_channel.send((logmessage_types.internal, internal_submessage_types.error, 'Broken socket/pipe'))
+				self.server_socket.close()
 
 		# Tell controller we're quiting
 		self.logging_channel.send((logmessage_types.internal, internal_submessage_types.quit))
@@ -238,7 +326,7 @@ class ServerThread(threading.Thread):
 		# Tell cron we're quiting
 		cron.quit(cron_control_channel)
 
-# spawn_serverthread(server, logging_channel) → control_channel
+# spawn_serverthread(server, cron_control_channel, logging_channel) → control_channel
 # Creates a ServerThread for given server and returns the channel for controlling it
 def spawn_serverthread(server, cron_control_channel, logging_channel):
 	thread_control_socket, spawner_control_socket = socket.socketpair()
@@ -276,6 +364,10 @@ if __name__ == '__main__':
 			logging_channel.send((logmessage_types.internal, internal_submessage_types.quit))
 			cron.quit(cron_control_channel)
 			break
+
+		elif cmd == 'r':
+			print('Keyboard reconnect')
+			control_channel.send((controlmessage_types.reconnect,))
 
 		elif len(cmd) > 0 and cmd[0] == '/':
 			control_channel.send((controlmessage_types.send_line, cmd[1:]))
