@@ -198,9 +198,9 @@ class ServerThread(threading.Thread):
 
 							self.handle_line(line)
 
-						# Remove possible pending ping timeout timer and reset ping timer to 5 minutes
+						# Remove possible pending ping timeout timer and reset ping timer to 3 minutes
 						cron.delete(self.cron_control_channel, self.control_channel, (controlmessage_types.ping_timeout,))
-						cron.reschedule(self.cron_control_channel, 5 * 60, self.control_channel, (controlmessage_types.ping,))
+						cron.reschedule(self.cron_control_channel, 3 * 60, self.control_channel, (controlmessage_types.ping,))
 
 					else:
 						error_message = 'Event on server socket: %s' % event
@@ -221,8 +221,8 @@ class ServerThread(threading.Thread):
 					elif command_type == controlmessage_types.ping:
 						assert len(arguments) == 0
 						self.send_line_raw(b'PING :foo')
-						# Reset ping timeout timer to 3 minutes
-						cron.reschedule(self.cron_control_channel, 3 * 60, self.control_channel, (controlmessage_types.ping_timeout,))
+						# Reset ping timeout timer to 2 minutes
+						cron.reschedule(self.cron_control_channel, 2 * 60, self.control_channel, (controlmessage_types.ping_timeout,))
 
 					elif command_type == controlmessage_types.ping_timeout:
 						self.logging_channel.send((logmessage_types.internal, internal_submessage_types.error, 'Ping timeout'))
@@ -249,7 +249,7 @@ class ServerThread(threading.Thread):
 			address = (self.server.host, self.server.port)
 			try:
 				self.server_socket = socket.create_connection(address)
-			except ConnectionRefusedError:
+			except (ConnectionRefusedError, socket.gaierror):
 				# Tell controller we failed
 				self.logging_channel.send((logmessage_types.internal, internal_submessage_types.error, "Can't connect to %s:%s" % address))
 
@@ -297,8 +297,8 @@ class ServerThread(threading.Thread):
 				for channel in self.server.channels:
 					self.api.join(channel.encode('utf-8'))
 
-				# Schedule a ping to be sent in 5 minutes of no activity
-				cron.reschedule(self.cron_control_channel, 5 * 60, self.control_channel, (controlmessage_types.ping,))
+				# Schedule a ping to be sent in 3 minutes of no activity
+				cron.reschedule(self.cron_control_channel, 3 * 60, self.control_channel, (controlmessage_types.ping,))
 
 				# Run mainloop
 				reconnecting = self.mainloop()
