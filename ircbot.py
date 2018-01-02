@@ -61,6 +61,9 @@ class API:
 		# We need to access the internal functions of the ServerThread object in order to send lines etc.
 		self.serverthread_object = serverthread_object
 
+		# Have the cron object accessible more easily
+		self.cron = serverthread_object.cron_control_channel
+
 	def send_raw(self, line):
 		"""Sends a raw line (will terminate it itself.)
 		Don't use unless you are completely sure you know what you're doing."""
