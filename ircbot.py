@@ -40,7 +40,6 @@ class LoggerThread(threading.Thread):
 					assert len(message_data) == 1
 					print('--- Quit')
 
-					# TODO: don't quit, restart
 					self.dead_notify_channel.send((controlmessage_types.quit,))
 					break
 
