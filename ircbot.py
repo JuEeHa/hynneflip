@@ -237,9 +237,13 @@ class ServerThread(threading.Thread):
 		# Run initialization
 		self.send_line_raw(b'USER HynneFlip a a :' + self.server.realname.encode('utf-8'))
 
-		# Set up nick and channels
+		# Set up nick
 		self.api.nick(self.server.nick.encode('utf-8'))
 
+		# Run the on_connect hook, to allow further setup
+		botcmd.on_connect(irc = self.api)
+
+		# Join channels
 		for channel in self.server.channels:
 			self.api.join(channel.encode('utf-8'))
 
