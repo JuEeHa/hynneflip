@@ -1,12 +1,14 @@
-# initialize()
+# initialize(*, config)
 # Called to initialize the IRC bot
 # Runs before even logger is brought up, and blocks further bringup until it's done
-def initialize():
+# config is a configpatser.ConfigParser object containig contents of bot.conf
+def initialize(*, config):
 	...
 
 # on_connect(*, irc)
 # Called after IRC bot has connected and sent the USER/NICk commands but not yet attempted anything else
 # Blocks the bot until it's done, including PING/PONG handling
+# irc is the IRC API object
 def on_connect(*, irc):
 	...
 
@@ -26,6 +28,7 @@ def handle_message(*, prefix, message, nick, channel, irc):
 # prefix is the prefix at the start of the message, without the leading ':'
 # command is the command or number code
 # arguments is rest of the arguments of the command, represented as a list. ':'-arguments are handled automatically
+# irc is the IRC API object
 # All strings are bytestrings or bytearrays
 def handle_nonmessage(*, prefix, command, arguments, irc):
 	...

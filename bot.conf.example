@@ -1,0 +1,7 @@
+[server]
+host = irc.freenode.net
+port = 6667
+nick = o3-base
+username = o3-base
+realname = IRC bot based on o3-base
+channels = ##ingsoc

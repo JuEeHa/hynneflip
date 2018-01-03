@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import configparser
 import select
 import socket
 import threading
@@ -12,7 +13,7 @@ import botcmd
 import cron
 import line_handling
 
-Server = namedtuple('Server', ['host', 'port', 'nick', 'realname', 'channels'])
+Server = namedtuple('Server', ['host', 'port', 'nick', 'username', 'realname', 'channels'])
 
 class LoggerThread(threading.Thread):
 	def __init__(self, logging_channel, dead_notify_channel):
@@ -284,7 +285,7 @@ class ServerThread(threading.Thread):
 
 			try:
 				# Run initialization
-				self.send_line_raw(b'USER HynneFlip a a :' + self.server.realname.encode('utf-8'))
+				self.send_line_raw(b'USER %s a a :%s' % (self.server.username.encode('utf-8'), self.server.realname.encode('utf-8')))
 
 				# Set up nick
 				self.api.nick(self.server.nick.encode('utf-8'))
@@ -304,7 +305,7 @@ class ServerThread(threading.Thread):
 
 				if not reconnecting:
 					# Tell the server we're quiting
-					self.send_line_raw(b'QUIT :HynneFlip exiting normally')
+					self.send_line_raw(b'QUIT :%s exiting normally' % self.server.username.encode('utf-8'))
 					self.server_socket.close()
 
 					break
@@ -341,11 +342,27 @@ def spawn_loggerthread():
 	LoggerThread(logging_channel, dead_notify_channel).start()
 	return logging_channel, dead_notify_channel
 
-if __name__ == '__main__':
-	# TODO: read from a configuration file
-	server = Server(host = 'irc.freenode.net', port = 6667, nick = 'o3-base', realname = 'IRC bot based on o3-base', channels = ['##ingsoc'])
+# read_config() → config, server
+# Reads the configuration file and returns the configuration object as well as a server object for spawn_serverthread
+def read_config():
+	config = configparser.ConfigParser()
+	config.read('bot.conf')
 
-	botcmd.initialize()
+	host = config['server']['host']
+	port = int(config['server']['port'])
+	nick = config['server']['nick']
+	username = config['server']['username']
+	realname = config['server']['realname']
+	channels = config['server']['channels'].split()
+
+	server = Server(host = host, port = port, nick = nick, username = username, realname = realname, channels = channels)
+
+	return config, server
+
+if __name__ == '__main__':
+	config, server = read_config()
+
+	botcmd.initialize(config = config)
 
 	cron_control_channel = cron.start()
 	logging_channel, dead_notify_channel = spawn_loggerthread()
