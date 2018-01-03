@@ -78,6 +78,10 @@ class API:
 		"""Prefix message with ZWSP and convert from unicode to bytestring."""
 		self.msg(recipient, ('\u200b' + message).encode('utf-8'))
 
+	def bot_response_bytes(self, recipient, message):
+		"""Prefix message (bytestring) with ZWSP"""
+		self.msg(recipient, '\u200b'.encode('utf-8') + message)
+
 	def nick(self, nick):
 		"""Send a NICK command and update the internal nick tracking state"""
 		with self.serverthread_object.nick_lock:
