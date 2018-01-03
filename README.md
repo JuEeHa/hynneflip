@@ -9,6 +9,10 @@ Name
 
 Hymmnos lexicon is rather limited, so this is meant as an approximation of "word translator"
 
+Setup
+=====
+Copy `bot.conf.example` to `bot.conf` and run `python3 ircbot.py`
+
 License
 -------
 All code is licensed under UNLICENSE / CC0. There are some additional files that are from other sources and have their own license

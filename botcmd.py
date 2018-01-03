@@ -13,7 +13,7 @@ Emotion = namedtuple('Emotion', ['hymmnos', 'meaning_en'])
 emotion_lexicon = {}
 emotion_lexicon_lock = threading.Lock()
 
-def initialize():
+def initialize(*, config):
 	read_hymmnos_lexicon()
 	read_emotion_lexicon()
 
@@ -241,4 +241,4 @@ def handle_message(*, prefix, message, nick, channel, irc):
 		irc.msg(channel, response_prefix + response.encode('utf-8'))
 
 def handle_nonmessage(*, prefix, command, arguments, irc):
-	...
+	pass

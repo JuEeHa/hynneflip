@@ -1,0 +1,7 @@
+[server]
+host = irc.freenode.net
+port = 6667
+nick = HynneFlip
+username = HynneFlip
+realname = HynneFlip IRC bot
+channels = ##hymmnos
