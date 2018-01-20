@@ -75,8 +75,11 @@ class API:
 		self.serverthread_object.send_line_raw(line)
 
 	def bot_response(self, recipient, message):
-		"""Prefix message with ZWSP and convert from unicode to bytestring."""
-		self.msg(recipient, ('\u200b' + message).encode('utf-8'))
+		"""Prefix message with ZWSP and convert from unicode to bytestring if necessary."""
+		if isinstance(message, str):
+			message = message.encode('utf-8')
+
+		self.msg(recipient, '\u200b'.encode('utf-8') + message)
 
 	def nick(self, nick):
 		"""Send a NICK command and update the internal nick tracking state"""
@@ -96,6 +99,18 @@ class API:
 			line = b'JOIN ' + channel
 			self.serverthread_object.send_line_raw(line)
 			self.serverthread_object.channels.add(channel)
+
+	def part(self, channel, message = b''):
+		"""Send a PART command and update the internal channel tracking state"""
+		with self.serverthread_object.channels_lock:
+			line = b'PART %s :%s' % (channel, message)
+			self.serverthread_object.send_line_raw(line)
+			self.serverthread_object.channels.removeadd(channel)
+
+	def get_channels(self):
+		"""Returns the current set of channels"""
+		with self.serverthread_object.channels_lock:
+			return self.serverthread_object.channels
 
 	def error(self, message):
 		"""Log an error"""
@@ -304,6 +319,9 @@ class ServerThread(threading.Thread):
 				reconnecting = self.mainloop()
 
 				if not reconnecting:
+					# Run bot cleanup code
+					botcmd.on_quit(irc = self.api)
+
 					# Tell the server we're quiting
 					self.send_line_raw(b'QUIT :%s exiting normally' % self.server.username.encode('utf-8'))
 					self.server_socket.close()

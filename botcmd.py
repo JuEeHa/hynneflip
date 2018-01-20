@@ -20,6 +20,9 @@ def initialize(*, config):
 def on_connect(*, irc):
 	pass
 
+def on_quit(*, irc):
+	pass
+
 def read_hymmnos_lexicon():
 	global hymmnos_lexicon, hymmnos_lexicon_by_hymmnos, hymmnos_lexicon_lock
 
@@ -222,6 +225,14 @@ def handle_command(command):
 	else:
 		return 'Command not recognised: %s' % command
 
+# handle_message(*, prefix, message, nick, channel, irc)
+# Called for PRIVMSGs.
+# prefix is the prefix at the start of the message, without the leading ':'
+# message is the contents of the message
+# nick is who sent the message
+# channel is where you should send the response (note: in queries nick == channel)
+# irc is the IRC API object
+# All strings are bytestrings or bytearrays
 def handle_message(*, prefix, message, nick, channel, irc):
 	own_nick = irc.get_nick()
 
