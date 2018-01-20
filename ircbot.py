@@ -75,11 +75,10 @@ class API:
 		self.serverthread_object.send_line_raw(line)
 
 	def bot_response(self, recipient, message):
-		"""Prefix message with ZWSP and convert from unicode to bytestring."""
-		self.msg(recipient, ('\u200b' + message).encode('utf-8'))
+		"""Prefix message with ZWSP and convert from unicode to bytestring if necessary."""
+		if isinstance(message, str):
+			message = message.encode('utf-8')
 
-	def bot_response_bytes(self, recipient, message):
-		"""Prefix message (bytestring) with ZWSP"""
 		self.msg(recipient, '\u200b'.encode('utf-8') + message)
 
 	def nick(self, nick):
