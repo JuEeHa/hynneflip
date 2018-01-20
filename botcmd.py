@@ -12,6 +12,13 @@ def initialize(*, config):
 def on_connect(*, irc):
 	...
 
+# on_quit(*, irc)
+# Called just before IRC bot sends QUIT
+# Blocks the bot until it's done, including PING/PONG handling
+# irc is the IRC API object
+def on_quit(*, irc):
+	...
+
 # handle_message(*, prefix, message, nick, channel, irc)
 # Called for PRIVMSGs.
 # prefix is the prefix at the start of the message, without the leading ':'

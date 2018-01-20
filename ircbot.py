@@ -307,6 +307,9 @@ class ServerThread(threading.Thread):
 				reconnecting = self.mainloop()
 
 				if not reconnecting:
+					# Run bot cleanup code
+					botcmd.on_quit(irc = self.api)
+
 					# Tell the server we're quiting
 					self.send_line_raw(b'QUIT :%s exiting normally' % self.server.username.encode('utf-8'))
 					self.server_socket.close()
