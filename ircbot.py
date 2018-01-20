@@ -100,6 +100,18 @@ class API:
 			self.serverthread_object.send_line_raw(line)
 			self.serverthread_object.channels.add(channel)
 
+	def part(self, channel, message = b''):
+		"""Send a PART command and update the internal channel tracking state"""
+		with self.serverthread_object.channels_lock:
+			line = b'PART %s :%s' % (channel, message)
+			self.serverthread_object.send_line_raw(line)
+			self.serverthread_object.channels.removeadd(channel)
+
+	def get_channels(self):
+		"""Returns the current set of channels"""
+		with self.serverthread_object.channels_lock:
+			return self.serverthread_object.channels
+
 	def error(self, message):
 		"""Log an error"""
 		self.serverthread_object.logging_channel.send((logmessage_types.internal, internal_submessage_types.error, message))
