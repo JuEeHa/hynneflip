@@ -333,9 +333,9 @@ class ServerThread(threading.Thread):
 					self.send_line_raw(b'QUIT :Reconnecting')
 					self.server_socket.close()
 
-			except BrokenPipeError as err:
+			except (BrokenPipeError, TimeoutError) as err:
 				# Connection broke, log it and try to reconnect
-				self.logging_channel.send((logmessage_types.internal, internal_submessage_types.error, 'Broken socket/pipe'))
+				self.logging_channel.send((logmessage_types.internal, internal_submessage_types.error, 'Broken socket/pipe or timeout'))
 				self.server_socket.close()
 
 		# Tell controller we're quiting
